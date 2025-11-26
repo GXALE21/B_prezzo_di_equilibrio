@@ -97,14 +97,14 @@ namespace ese_prezzo_di_equilibrio
                 dgvRisultati.Rows.Add(q, pDom.ToString("F2"), pOff.ToString("F2"));
             }
 
-            // Trova equilibrio con alta precisione (senza limite QMax)
+            // Trova equilibrio con PRECISIONE MASSIMA
             var equilibrio = TrovaEquilibrioPreciso(aD, bD, aS, bS, cS);
 
             if (equilibrio.HasValue)
             {
                 lblRisultato.Text = $"Prezzo di equilibrio: P = {equilibrio.Value.p:F2}, Quantità = {equilibrio.Value.q:F2}";
 
-                // Mostra calcoli di verifica
+                // Mostra calcoli di verifica con alta precisione
                 MostraCalcoliVerifica(equilibrio.Value.q, equilibrio.Value.p, aD, bD, aS, bS, cS);
             }
             else
@@ -116,13 +116,13 @@ namespace ese_prezzo_di_equilibrio
             DisegnaGrafico(qMin, qMax, aD, bD, aS, bS, cS, equilibrio);
         }
 
-        private double CalcolaDomanda(int q, double aD, double bD)
+        private double CalcolaDomanda(double q, double aD, double bD)
         {
             // Formula: d = aD - bD * q
             return aD - (bD * q);
         }
 
-        private double CalcolaOfferta(int q, double aS, double bS, double cS)
+        private double CalcolaOfferta(double q, double aS, double bS, double cS)
         {
             // Formula: o = aS + bS * q^cS
             return aS + bS * Math.Pow(q, cS);
@@ -130,66 +130,86 @@ namespace ese_prezzo_di_equilibrio
 
         private (double q, double p)? TrovaEquilibrioPreciso(double aD, double bD, double aS, double bS, double cS)
         {
-            // Cerca equilibrio fino a Q=50 (più che sufficiente)
-            for (double q = 0; q <= 50; q += 0.001)
-            {
-                double pDom = CalcolaDomanda((int)q, aD, bD);
-                double pOff = CalcolaOfferta((int)q, aS, bS, cS);
+            // Cerchiamo l'intervallo dove l'offerta supera la domanda
+            double qStart = 0;
+            double qEnd = 0;
 
-                // Se offerta supera domanda, abbiamo trovato la zona di equilibrio
+            // Trova l'intervallo [qStart, qEnd] dove avviene l'incrocio
+            for (double q = 0; q <= 50; q += 0.1)
+            {
+                double pDom = CalcolaDomanda(q, aD, bD);
+                double pOff = CalcolaOfferta(q, aS, bS, cS);
+
                 if (pOff >= pDom)
                 {
-                    // Cerchiamo il punto esatto con ricerca binaria nell'intorno
-                    return TrovaEquilibrioEsatto(q - 1, q, aD, bD, aS, bS, cS);
+                    qStart = q - 0.1; // Un passo prima
+                    qEnd = q;         // Dove offerta >= domanda
+                    break;
                 }
             }
 
-            return null;
+            // Se non troviamo l'intervallo, restituisci null
+            if (qEnd == 0) return null;
+
+            // Ricerca binaria per trovare l'equilibrio ESATTO
+            return TrovaEquilibrioEsatto(qStart, qEnd, aD, bD, aS, bS, cS);
         }
 
-        private (double q, double p)? TrovaEquilibrioEsatto(double qStart, double qEnd, double aD, double bD, double aS, double bS, double cS)
+        private (double q, double p) TrovaEquilibrioEsatto(double qStart, double qEnd, double aD, double bD, double aS, double bS, double cS)
         {
-            // Ricerca binaria per equilibrio preciso
-            int maxIterazioni = 100;
-            double tolleranza = 0.0001;
+            int maxIterazioni = 1000; // Molte iterazioni per massima precisione
+            double tolleranza = 0.0000001; // Tolleranza molto stretta
+
+            double qEquilibrio = 0;
+            double pEquilibrio = 0;
 
             for (int i = 0; i < maxIterazioni; i++)
             {
                 double qMid = (qStart + qEnd) / 2;
-                double pDom = CalcolaDomanda((int)qMid, aD, bD);
-                double pOff = CalcolaOfferta((int)qMid, aS, bS, cS);
+                double pDom = CalcolaDomanda(qMid, aD, bD);
+                double pOff = CalcolaOfferta(qMid, aS, bS, cS);
                 double differenza = pDom - pOff;
 
+                // Se la differenza è entro la tolleranza, abbiamo trovato!
                 if (Math.Abs(differenza) < tolleranza)
                 {
-                    return (Math.Round(qMid, 2), Math.Round(pDom, 2));
+                    qEquilibrio = qMid;
+                    pEquilibrio = pDom;
+                    break;
                 }
 
                 if (differenza > 0)
                 {
-                    qStart = qMid; // Domanda > Offerta, aumenta q
+                    // Domanda > Offerta, aumenta q
+                    qStart = qMid;
                 }
                 else
                 {
-                    qEnd = qMid; // Offerta > Domanda, diminuisci q
+                    // Offerta > Domanda, diminuisci q
+                    qEnd = qMid;
+                }
+
+                // Se siamo all'ultima iterazione, usiamo il valore migliore
+                if (i == maxIterazioni - 1)
+                {
+                    qEquilibrio = qMid;
+                    pEquilibrio = pDom;
                 }
             }
 
-            // Se non converge, restituisci il migliore
-            double qBest = (qStart + qEnd) / 2;
-            double pBest = CalcolaDomanda((int)qBest, aD, bD);
-            return (Math.Round(qBest, 2), Math.Round(pBest, 2));
+            return (qEquilibrio, pEquilibrio);
         }
 
         private void MostraCalcoliVerifica(double q, double p, double aD, double bD, double aS, double bS, double cS)
         {
-            double domandaVerifica = CalcolaDomanda((int)q, aD, bD);
-            double offertaVerifica = CalcolaOfferta((int)q, aS, bS, cS);
+            double domandaVerifica = CalcolaDomanda(q, aD, bD);
+            double offertaVerifica = CalcolaOfferta(q, aS, bS, cS);
 
-            string verifica = $"\n\nVerifica equilibrio:\n" +
-                            $"Domanda({q:F2}) = {aD} - ({bD} × {q:F2}) = {domandaVerifica:F2}\n" +
-                            $"Offerta({q:F2}) = {aS} + ({bS} × {q:F2}³) = {offertaVerifica:F2}\n" +
-                            $"Differenza: {Math.Abs(domandaVerifica - offertaVerifica):F4}";
+            string verifica = $"\n\nVERIFICA PRECISIONE EQUILIBRIO:\n" +
+                            $"Quantità esatta: q = {q:F8}\n" +
+                            $"Domanda({q:F8}) = {aD} - ({bD} × {q:F8}) = {domandaVerifica:F8}\n" +
+                            $"Offerta({q:F8}) = {aS} + ({bS} × {q:F8}³) = {offertaVerifica:F8}\n" +
+                            $"DIFFERENZA: {Math.Abs(domandaVerifica - offertaVerifica):F10}";
 
             lblRisultato.Text += verifica;
         }
